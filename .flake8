@@ -1,0 +1,10 @@
+[flake8]
+exclude =
+    .venv,
+    .git,
+    __pycache__,
+    */migrations/*,
+    */static/*,
+    */templates/*
+max-line-length = 119
+ignore = E203, W503
