@@ -8,7 +8,7 @@
 
 ## 📦 Установка
 ```bash
-git clone https://github.com/ваш-username/Bank.git
+git clone https://github.com/vladreson/Bank.git
 cd Bank
 python -m venv .venv && source .venv/bin/activate  # Linux/Mac
 pip install -e .
