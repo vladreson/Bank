@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Dict
+from typing import Dict, Union
 
 import pandas as pd
 
@@ -16,7 +16,7 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def spending_by_category(df: pd.DataFrame, category: str, months_back: int = 3) -> Dict:
+def spending_by_category(df: pd.DataFrame, category: str, months_back: int = 3) -> Union[Dict, str]:
     """Анализирует траты по категории."""
     try:
         last_date = get_last_transaction_date(df)
@@ -25,9 +25,8 @@ def spending_by_category(df: pd.DataFrame, category: str, months_back: int = 3) 
         filtered = period_data[period_data["категория"].str.lower() == category.lower()]
 
         if filtered.empty:
-            return {"error": f"Нет данных по категории '{category}'"}
+            return json.dumps({"error": f"Нет данных по категории '{category}'"})
 
-        # Подготовка результата
         result = {
             "category": category,
             "period_start": (last_date - pd.DateOffset(months=months_back)).strftime("%d.%m.%Y"),
@@ -37,13 +36,12 @@ def spending_by_category(df: pd.DataFrame, category: str, months_back: int = 3) 
             "average_spending": round(float(filtered["сумма_платежа"].mean()), 2),
         }
 
-        # Сохранение отчета
         ensure_dir("reports")
         report_file = f"reports/report_{category.lower()}_{last_date.strftime('%Y%m')}.json"
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
 
-        return result
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.error(f"Ошибка: {e}")
-        return {"error": str(e)}
+        return json.dumps({"error": str(e)})

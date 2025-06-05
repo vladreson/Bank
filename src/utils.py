@@ -1,7 +1,5 @@
 import logging
-import os
 from datetime import datetime
-from typing import cast
 
 import pandas as pd
 
@@ -10,48 +8,64 @@ logger = logging.getLogger(__name__)
 
 
 def load_transactions(file_path: str) -> pd.DataFrame:
-    """Загружает и предобрабатывает транзакции из Excel файла."""
+    """Загружает транзакции из Excel файла."""
     try:
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Файл {file_path} не найден")
+        df = pd.read_excel(file_path)
 
-        df = pd.read_excel(file_path, dtype={"Дата операции": str, "Номер карты": str, "Сумма платежа": str})
+        # Преобразование и очистка данных
+        df["дата_операции"] = pd.to_datetime(df["Дата операции"], format="%d.%m.%Y %H:%M:%S", errors="coerce")
 
-        # Стандартизация колонок
-        df.columns = df.columns.str.lower().str.replace(" ", "_")
+        # Обработка суммы платежа (для числовых и строковых значений)
+        if "Сумма платежа" in df.columns:
+            if df["Сумма платежа"].dtype == object:
+                df["сумма_платежа"] = df["Сумма платежа"].str.replace(",", ".").astype(float)
+            else:
+                df["сумма_платежа"] = df["Сумма платежа"].astype(float)
 
-        # Проверка обязательных колонок
-        required_cols = {"дата_операции", "номер_карты", "сумма_платежа", "категория"}
-        missing = required_cols - set(df.columns)
-        if missing:
-            raise ValueError(f"Отсутствуют колонки: {missing}")
+        # Обработка номера карты (преобразуем в строку)
+        if "Номер карты" in df.columns:
+            df["номер_карты"] = df["Номер карты"].astype(str)
 
-        # Преобразование дат
-        df["дата_операции"] = pd.to_datetime(df["дата_операции"], format="%d.%m.%Y %H:%M:%S", errors="coerce")
+        # Остальные поля
+        optional_fields = {"Категория": "категория", "Описание": "описание", "Статус": "статус"}
 
-        # Обработка числовых значений
-        df["сумма_платежа"] = pd.to_numeric(df["сумма_платежа"].str.replace(",", "."), errors="coerce")
+        for src, dest in optional_fields.items():
+            if src in df.columns:
+                df[dest] = df[src]
 
-        # Фильтрация валидных данных
-        df = df[df["статус"].str.upper() == "OK"] if "статус" in df.columns else df
-        df = df.dropna(subset=["дата_операции", "сумма_платежа"])
-        df["номер_карты"] = df["номер_карты"].str[-4:]
+        # Выбираем только нужные колонки (те, которые существуют)
+        available_columns = [
+            col
+            for col in ["дата_операции", "номер_карты", "сумма_платежа", "категория", "описание", "статус"]
+            if col in df.columns
+        ]
 
-        return df
+        return df[available_columns].dropna(subset=["дата_операции", "сумма_платежа"])
 
     except Exception as e:
-        logger.error(f"Ошибка загрузки: {e}")
-        raise
+        logger.error(f"Ошибка загрузки данных: {e}")
+        return pd.DataFrame()
 
 
 def get_last_transaction_date(df: pd.DataFrame) -> datetime:
-    """Возвращает последнюю дату транзакции с явным приведением типа."""
-    last_date = df['дата_операции'].max()
-    # Явное приведение типа для mypy
-    return cast(datetime, last_date.to_pydatetime())
+    """Возвращает дату последней транзакции."""
+    if df.empty:
+        return datetime.now()
+    max_date = df["дата_операции"].max()
+    return max_date.to_pydatetime() if pd.notnull(max_date) else datetime.now()
 
 
-def filter_by_period(df: pd.DataFrame, end_date: datetime, months: int = 1) -> pd.DataFrame:
-    """Фильтрует транзакции за указанный период."""
-    start_date = end_date - pd.DateOffset(months=months)
-    return df[(df["дата_операции"] >= start_date) & (df["дата_операции"] <= end_date)]
+def filter_by_period(df: pd.DataFrame, end_date: datetime, months_back: int = 1) -> pd.DataFrame:
+    """
+    Фильтрует транзакции за указанный период.
+    """
+    try:
+        if df.empty:
+            return pd.DataFrame()
+
+        start_date = end_date - pd.DateOffset(months=months_back)
+        mask = (df["дата_операции"] >= start_date) & (df["дата_операции"] <= end_date)
+        return df.loc[mask].copy()
+    except Exception as e:
+        logger.error(f"Ошибка фильтрации по периоду: {e}")
+        return pd.DataFrame()
